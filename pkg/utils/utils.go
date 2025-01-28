@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// GenerateRandomString generates a random string of the given length.
+// Еебать старье, крч просто функция по рандомному созданию стринга
 func GenerateRandomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	seededRand := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -21,21 +21,21 @@ func GenerateRandomString(length int) string {
 	return string(b)
 }
 
-// CreateHMAC creates an HMAC-SHA256 hash of the given data.
+// CreateHMAC создает хэш HMAC-SHA256 для защиты
 func CreateHMAC(data string, secret []byte) string {
 	h := hmac.New(sha256.New, secret)
 	h.Write([]byte(data))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// GenerateTransactionID generates a unique transaction ID.
+// Генератор транзакционных ID
 func GenerateTransactionID() string {
 	timestamp := time.Now().UnixNano()
 	random := GenerateRandomString(8)
 	return fmt.Sprintf("%d-%s", timestamp, random)
 }
 
-// GetCurrentTimestamp returns the current timestamp in RFC3339 format.
+// GetCurrentTimestamp возвращает текущую временную метку в формате RFC3339.
 func GetCurrentTimestamp() string {
 	return time.Now().Format(time.RFC3339)
 }

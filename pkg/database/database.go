@@ -29,7 +29,7 @@ func InitDB(path string) (*sql.DB, error) {
 	return db, nil
 }
 
-// createTables creates the necessary database tables.
+// создаем таблитцу датабазы
 func createTables(db *sql.DB) error {
 	// Use a single transaction for table creation.
 	tx, err := db.Begin()
