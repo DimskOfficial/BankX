@@ -237,7 +237,7 @@ func (s *transactionService) ProcessTransfer(req *models.TransferRequest, claims
 	}
 
 	transactionID := utils.GenerateTransactionID()
-	// Insert transaction record.
+	// Кароче успешная транзакция.
 	_, err = tx.Exec(`
         INSERT INTO transactions (id, from_account_id, to_account_id, amount, type, status, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)`,
