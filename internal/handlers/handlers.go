@@ -38,7 +38,7 @@ func (e *AppError) Error() string {
 	return fmt.Sprintf("AppError: %s (Code: %d, Details: %s, OriginalError: %v)", e.Message, e.Code, e.Details, e.Err)
 }
 
-// ErrorHandler handles errors within Fiber.
+// ErrorHandler ошибки от фибера
 func (h *Handler) ErrorHandler(c *fiber.Ctx, err error) error {
 	// Log the error (consider using a structured logger)
 	fmt.Printf("Error: %v\n", err)
@@ -68,7 +68,7 @@ func (h *Handler) ErrorHandler(c *fiber.Ctx, err error) error {
 	})
 }
 
-// Register handles user registration.
+// Обработчик регистрации
 func (h *Handler) Register(c *fiber.Ctx) error {
 	var req models.AuthRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -87,7 +87,7 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "Registration successful"})
 }
 
-// Login handles user login.
+// Обработчик авторизации
 func (h *Handler) Login(c *fiber.Ctx) error {
 	var req models.AuthRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -106,7 +106,7 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"token": token})
 }
 
-// AuthMiddleware handles JWT authentication.
+// AuthMiddleware Обработчик JWT авторизации
 func (h *Handler) AuthMiddleware(c *fiber.Ctx) error {
 	if c.Method() == "OPTIONS" {
 		return c.Next()
@@ -132,7 +132,7 @@ func (h *Handler) AuthMiddleware(c *fiber.Ctx) error {
 	return c.Next()
 }
 
-// GetAccounts retrieves user accounts.
+// GetAccounts извлекает учетные записи пользователей.....
 func (h *Handler) GetAccounts(c *fiber.Ctx) error {
 	claims, ok := c.Locals("user").(*models.Claims)
 	if !ok {
@@ -142,6 +142,7 @@ func (h *Handler) GetAccounts(c *fiber.Ctx) error {
 	accounts, err := h.accountService.GetAccounts(claims.UserID)
 	if err != nil {
 		var appErr *services.AppError
+
 		if errors.As(err, &appErr) {
 			return appErr
 		}
@@ -151,15 +152,16 @@ func (h *Handler) GetAccounts(c *fiber.Ctx) error {
 	return c.JSON(accounts)
 }
 
-// Transfer handles fund transfers.
+// Обработчик переводов средств
 func (h *Handler) Transfer(c *fiber.Ctx) error {
 	claims, ok := c.Locals("user").(*models.Claims)
 	if !ok {
 		return &AppError{Code: fiber.StatusInternalServerError, Message: "Failed to retrieve user claims", Details: "User claims were not of the expected type"}
 	}
 	var req models.TransferRequest
+
 	if err := c.BodyParser(&req); err != nil {
-		return &AppError{Code: fiber.StatusBadRequest, Message: "Invalid request format", Details: err.Error(), Err: err}
+		return &AppError{Code: fiber.StatusBadRequest, Message: "Invalid request format", Details: err.Error(), Err: err} // АААА ошибка!
 	}
 
 	if err := h.transactionService.ProcessTransfer(&req, claims); err != nil {
@@ -173,7 +175,7 @@ func (h *Handler) Transfer(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Transfer successful"})
 }
 
-// Deposit handles deposits.
+// // Обработчик пополнения счета
 func (h *Handler) Deposit(c *fiber.Ctx) error {
 	claims, ok := c.Locals("user").(*models.Claims)
 	if !ok {
@@ -189,7 +191,7 @@ func (h *Handler) Deposit(c *fiber.Ctx) error {
 		return &AppError{Code: fiber.StatusBadRequest, Message: "Invalid request format", Details: err.Error(), Err: err}
 	}
 
-	req.AccountID = accountID // Set the AccountID from the URL parameter
+	req.AccountID = accountID // Что-бы было
 	if err := h.transactionService.ProcessDeposit(&req, claims); err != nil {
 		var appErr *services.AppError
 		if errors.As(err, &appErr) {
@@ -198,10 +200,10 @@ func (h *Handler) Deposit(c *fiber.Ctx) error {
 		return &AppError{Code: fiber.StatusBadRequest, Message: "Deposit failed", Details: err.Error(), Err: err}
 	}
 
-	return c.JSON(fiber.Map{"message": "Deposit successful"})
+	return c.JSON(fiber.Map{"message": "Deposit successful"}) // Ура все палучилось!
 }
 
-// Withdraw handles withdrawals.
+// Обработчик вывода средств со счеавта
 func (h *Handler) Withdraw(c *fiber.Ctx) error {
 	claims, ok := c.Locals("user").(*models.Claims)
 	if !ok {

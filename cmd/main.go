@@ -1,6 +1,6 @@
-// Path: cmd/main.go
 package main
 
+// ААААА импорты страшные!!
 import (
 	"bank-api/internal/handlers"
 	"bank-api/internal/services"
@@ -15,9 +15,10 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// Главная функция
 func main() {
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, proceeding with environment variables")
+		log.Println("Какой-то дурак снес .env файл, идем создавать его!")
 	}
 
 	dbPath := os.Getenv("DB_PATH")
@@ -26,7 +27,7 @@ func main() {
 	}
 	db, err := database.InitDB(dbPath)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		log.Fatalf("Не удалось пропердеть датабазу: %v", err)
 	}
 	defer db.Close()
 
@@ -50,7 +51,7 @@ func main() {
 
 	// CORS middleware configuration
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     "http://localhost:3000,http://localhost:8080", // Укажите здесь URL вашего фронтенда
+		AllowOrigins:     "http://localhost:3000", // Укажите здесь URL вашего фронтенда // у нас нет фронтенда дурак
 		AllowMethods:     "GET,POST,HEAD,PUT,DELETE,PATCH,OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 		AllowCredentials: true,
@@ -73,6 +74,6 @@ func main() {
 	if port == "" {
 		port = "3000"
 	}
-	log.Printf("Server is running on port %s", port)
+	log.Printf("We are waiting fif issue, port: %s", port)
 	log.Fatal(app.Listen(":" + port))
 }
