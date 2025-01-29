@@ -1,6 +1,5 @@
 package main
 
-// ААААА импорты страшные!!
 import (
 	"bank-api/internal/handlers"
 	"bank-api/internal/services"
@@ -15,10 +14,9 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Главная функция
 func main() {
 	if err := godotenv.Load(); err != nil {
-		log.Println("Какой-то дурак снес .env файл, идем создавать его!")
+		log.Println("Не найден .env файл, используем переменные окружения")
 	}
 
 	dbPath := os.Getenv("DB_PATH")
@@ -27,20 +25,19 @@ func main() {
 	}
 	db, err := database.InitDB(dbPath)
 	if err != nil {
-		log.Fatalf("Не удалось пропердеть датабазу: %v", err)
+		log.Fatalf("Ошибка инициализации БД: %v", err)
 	}
 	defer db.Close()
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		log.Fatal("JWT_SECRET is not set in environment variables")
+		log.Fatal("JWT_SECRET не установлен")
 	}
 
-	// Use interfaces for service dependencies.
 	var (
-		transactionService services.TransactionService = services.NewTransactionService(db, jwtSecret)
-		authService        services.AuthService        = services.NewAuthService(db, jwtSecret)
-		accountService     services.AccountService     = services.NewAccountService(db, jwtSecret)
+		transactionService = services.NewTransactionService(db, jwtSecret)
+		authService        = services.NewAuthService(db, jwtSecret)
+		accountService     = services.NewAccountService(db, jwtSecret)
 	)
 
 	h := handlers.NewHandler(transactionService, authService, accountService)
@@ -49,12 +46,12 @@ func main() {
 		ErrorHandler: h.ErrorHandler,
 	})
 
-	// CORS middleware configuration
+	// Настройка CORS
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     "http://localhost:3000", // Укажите здесь URL вашего фронтенда // у нас нет фронтенда дурак
-		AllowMethods:     "GET,POST,HEAD,PUT,DELETE,PATCH,OPTIONS",
+		AllowOrigins:     "http://localhost:3000", // Укажите конкретный источник
+		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
-		AllowCredentials: true,
+		AllowCredentials: true, // Если вам нужно передавать куки
 	}))
 
 	app.Use(recover.New())
@@ -74,6 +71,6 @@ func main() {
 	if port == "" {
 		port = "3000"
 	}
-	log.Printf("We are waiting fif issue, port: %s", port)
+	log.Printf("Сервер запущен на порту %s", port)
 	log.Fatal(app.Listen(":" + port))
 }

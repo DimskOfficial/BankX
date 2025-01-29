@@ -80,7 +80,7 @@ func (s *transactionService) ProcessDeposit(req *models.TransactionRequest, clai
 	if err != nil {
 		return &AppError{Code: 500, Message: "Failed to update account balance", Details: err.Error(), Err: err}
 	}
-	req.TransactionID = utils.GenerateTransactionID()
+	req.TransactionID = utils.GenerateTransactionID() // Генерация transactionID
 
 	// Insert the transaction record.
 	_, err = tx.Exec(`
@@ -139,7 +139,7 @@ func (s *transactionService) ProcessWithdraw(req *models.TransactionRequest, cla
 	if err != nil {
 		return &AppError{Code: 500, Message: "Failed to update account balance", Details: err.Error(), Err: err}
 	}
-	req.TransactionID = utils.GenerateTransactionID()
+	req.TransactionID = utils.GenerateTransactionID() // Генерация transactionID
 
 	// Insert transaction record.
 	_, err = tx.Exec(`

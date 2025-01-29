@@ -4,7 +4,6 @@ package handlers
 import (
 	"bank-api/internal/models"
 	"bank-api/internal/services"
-	"bank-api/pkg/utils"
 	"errors"
 	"fmt"
 	"github.com/gofiber/fiber/v2"
@@ -201,7 +200,10 @@ func (h *Handler) Deposit(c *fiber.Ctx) error {
 		return &AppError{Code: fiber.StatusBadRequest, Message: "Deposit failed", Details: err.Error(), Err: err}
 	}
 
-	return c.JSON(fiber.Map{"message": "Deposit successful", "transactionID": utils.GenerateTransactionID()}) // Ура все получилось!
+	return c.JSON(fiber.Map{
+		"message":       "Deposit successful",
+		"transactionID": req.TransactionID, // Возвращаем transactionID
+	})
 }
 
 // Обработчик вывода средств со счеавта
@@ -228,5 +230,8 @@ func (h *Handler) Withdraw(c *fiber.Ctx) error {
 		return &AppError{Code: fiber.StatusBadRequest, Message: "Withdrawal failed", Details: err.Error(), Err: err}
 	}
 
-	return c.JSON(fiber.Map{"message": "Withdrawal successful"})
+	return c.JSON(fiber.Map{
+		"message":       "Withdrawal successful",
+		"transactionID": req.TransactionID, // Возвращаем transactionID
+	})
 }
