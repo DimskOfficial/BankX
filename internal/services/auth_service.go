@@ -56,6 +56,7 @@ func (s *authService) Register(username, password string) error {
 			Username: username,
 			Password: string(hashedPassword),
 		}
+		user.CreatedAt = time.Now().Format(time.RFC3339) // Set the CreatedAt field to the current time as a string
 		if err := tx.Create(&user).Error; err != nil {
 			return &AppError{Code: 500, Message: "Failed to insert user", Details: err.Error(), Err: err}
 		}

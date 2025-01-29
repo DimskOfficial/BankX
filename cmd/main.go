@@ -3,16 +3,16 @@ package main
 import (
 	"bank-api/internal/handlers"
 	"bank-api/internal/services"
+	"bank-api/pkg/database"
 	"log"
 	"os"
 
+	"github.com/gofiber/contrib/swagger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 func main() {
@@ -24,7 +24,7 @@ func main() {
 	if dsn == "" {
 		log.Fatal("DATABASE_URL не установлен")
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := database.InitDB(dsn)
 	if err != nil {
 		log.Fatalf("Ошибка инициализации БД: %v", err)
 	}
@@ -54,8 +54,15 @@ func main() {
 		AllowCredentials: true, // Если вам нужно передавать куки
 	}))
 
+	cfg := swagger.Config{
+		BasePath: "/",
+		Path:     "swagger",
+		Title:    "BankX API Docs",
+	}
+
 	app.Use(recover.New())
 	app.Use(logger.New())
+	app.Use(swagger.New(cfg))
 
 	api := app.Group("/api")
 	api.Post("/register", h.Register)
