@@ -16,7 +16,7 @@ import (
 type AuthService interface {
 	Register(username, password string) error
 	Login(username, password string) (string, error)
-	ValidateToken(tokenString string) (*models.Claims, error)
+	ValidateToken(token string) (*models.Claims, error)
 }
 
 type authService struct {
