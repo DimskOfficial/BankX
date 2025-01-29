@@ -3,13 +3,13 @@ package services
 
 import (
 	"bank-api/internal/models"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // AuthService handles user authentication and registration.
@@ -20,12 +20,12 @@ type AuthService interface {
 }
 
 type authService struct {
-	db     *sql.DB
+	db     *gorm.DB
 	jwtKey string
 }
 
 // NewAuthService creates a new AuthService.
-func NewAuthService(db *sql.DB, jwtSecret string) AuthService {
+func NewAuthService(db *gorm.DB, jwtSecret string) AuthService {
 	return &authService{
 		db:     db,
 		jwtKey: jwtSecret,
@@ -34,48 +34,48 @@ func NewAuthService(db *sql.DB, jwtSecret string) AuthService {
 
 // Register registers a new user.
 func (s *authService) Register(username, password string) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to start transaction", Details: err.Error(), Err: err}
-	}
-	defer tx.Rollback() // Ensure rollback on failure.
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Check if user already exists.
+		var count int64
+		err := tx.Model(&models.User{}).Where("username = ?", username).Count(&count).Error
+		if err != nil {
+			return &AppError{Code: 500, Message: "Failed to check user existence", Details: err.Error(), Err: err}
+		}
+		if count > 0 {
+			return &AppError{Code: 400, Message: "User already exists", Details: fmt.Sprintf("username: %s", username)}
+		}
 
-	// Check if user already exists.
-	var exists bool
-	err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)", username).Scan(&exists)
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to check user existence", Details: err.Error(), Err: err}
-	}
-	if exists {
-		return &AppError{Code: 400, Message: "User already exists", Details: fmt.Sprintf("username: %s", username)}
-	}
+		// Hash the password.
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return &AppError{Code: 500, Message: "Failed to hash password", Details: err.Error(), Err: err}
+		}
 
-	// Hash the password.
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to hash password", Details: err.Error(), Err: err}
-	}
+		// Insert the new user.
+		user := models.User{
+			Username: username,
+			Password: string(hashedPassword),
+		}
+		if err := tx.Create(&user).Error; err != nil {
+			return &AppError{Code: 500, Message: "Failed to insert user", Details: err.Error(), Err: err}
+		}
 
-	// Insert the new user.
-	res, err := tx.Exec("INSERT INTO users (username, password) VALUES (?, ?)", username, hashedPassword)
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to insert user", Details: err.Error(), Err: err}
-	}
+		// Create a default account for the user.
+		initialHash := CalculateBalanceHash(0, uint(user.ID), s.jwtKey) // Use consistent hashing
+		account := models.Account{
+			UserID:      user.ID,
+			Balance:     0,
+			BalanceHash: initialHash,
+		}
+		if err := tx.Create(&account).Error; err != nil {
+			return &AppError{Code: 500, Message: "Failed to create initial account", Details: err.Error(), Err: err}
+		}
 
-	userID, err := res.LastInsertId()
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to get last inserted ID", Details: err.Error(), Err: err}
-	}
+		return nil
+	})
 
-	// Create a default account for the user.
-	initialHash := CalculateBalanceHash(0, int(userID), s.jwtKey) // Use consistent hashing
-	_, err = tx.Exec("INSERT INTO accounts (user_id, balance, balance_hash) VALUES (?, ?, ?)", userID, 0, initialHash)
 	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to create initial account", Details: err.Error(), Err: err}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return &AppError{Code: 500, Message: "Failed to commit transaction", Details: err.Error(), Err: err}
+		return err
 	}
 
 	return nil
@@ -84,9 +84,9 @@ func (s *authService) Register(username, password string) error {
 // Login authenticates a user and returns a JWT.
 func (s *authService) Login(username, password string) (string, error) {
 	var user models.User
-	err := s.db.QueryRow("SELECT id, password FROM users WHERE username = ?", username).Scan(&user.ID, &user.Password)
+	err := s.db.Where("username = ?", username).First(&user).Error
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", &AppError{Code: 401, Message: "Invalid credentials", Details: "User not found"}
 		}
 		return "", &AppError{Code: 500, Message: "Failed to query user", Details: err.Error(), Err: err}
@@ -99,7 +99,7 @@ func (s *authService) Login(username, password string) (string, error) {
 
 	// Create JWT claims.
 	claims := &models.Claims{
-		UserID: user.ID,
+		UserID: uint(user.ID),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

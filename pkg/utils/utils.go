@@ -36,8 +36,8 @@ func GenerateTransactionID() string {
 }
 
 // GetCurrentTimestamp возвращает текущую временную метку в формате RFC3339.
-func GetCurrentTimestamp() string {
-	return time.Now().Format(time.RFC3339)
+func GetCurrentTimestamp() time.Time {
+	return time.Now()
 }
 
 func CalculateBalanceHash(balance float64, accountID int, secretKey string) string {

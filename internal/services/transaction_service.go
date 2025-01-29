@@ -4,9 +4,9 @@ package services
 import (
 	"bank-api/internal/models"
 	"bank-api/pkg/utils"
-	"database/sql"
 	"errors"
 	"fmt"
+	"gorm.io/gorm"
 )
 
 // TransactionService handles transaction-related operations.
@@ -17,12 +17,12 @@ type TransactionService interface {
 }
 
 type transactionService struct {
-	db        *sql.DB
+	db        *gorm.DB
 	secretKey string
 }
 
 // NewTransactionService creates a new TransactionService.
-func NewTransactionService(db *sql.DB, secretKey string) TransactionService {
+func NewTransactionService(db *gorm.DB, secretKey string) TransactionService {
 	return &transactionService{
 		db:        db,
 		secretKey: secretKey,
@@ -47,54 +47,45 @@ func (s *transactionService) ProcessDeposit(req *models.TransactionRequest, clai
 		return &AppError{Code: 400, Message: "Invalid deposit amount", Details: "Amount must be positive"}
 	}
 
-	tx, err := s.db.Begin()
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to start transaction", Details: err.Error(), Err: err}
-	}
-	defer tx.Rollback()
-
-	// Check if the account exists and belongs to the user.
-	var (
-		existingBalance float64
-		balanceHash     string
-	)
-
-	err = tx.QueryRow(`SELECT balance, balance_hash FROM accounts WHERE id = ? AND user_id = ?`, req.AccountID, claims.UserID).Scan(&existingBalance, &balanceHash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return &AppError{Code: 404, Message: "Account not found or access denied", Details: fmt.Sprintf("account_id: %d, user_id: %d", req.AccountID, claims.UserID)}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var account models.Account
+		if err := tx.Where("id = ? AND user_id = ?", req.AccountID, claims.UserID).First(&account).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return &AppError{Code: 404, Message: "Account not found or access denied", Details: fmt.Sprintf("account_id: %d, user_id: %d", req.AccountID, claims.UserID)}
+			}
+			return &AppError{Code: 500, Message: "Failed to query account", Details: err.Error(), Err: err}
 		}
-		return &AppError{Code: 500, Message: "Failed to query account", Details: err.Error(), Err: err}
-	}
 
-	// Verify balance hash
-	expectedHash := utils.CreateHMAC(fmt.Sprintf("%f:%d", existingBalance, req.AccountID), []byte(s.secretKey))
-	if balanceHash != expectedHash {
-		return &AppError{Code: 500, Message: "Balance integrity check failed", Details: fmt.Sprintf("account_id: %d", req.AccountID)}
-	}
+		// Verify balance hash
+		expectedHash := utils.CreateHMAC(fmt.Sprintf("%f:%d", account.Balance, req.AccountID), []byte(s.secretKey))
+		if account.BalanceHash != expectedHash {
+			return &AppError{Code: 500, Message: "Balance integrity check failed", Details: fmt.Sprintf("account_id: %d", req.AccountID)}
+		}
 
-	// Update the account balance and hash.
-	newBalance := existingBalance + req.Amount
-	newBalanceHash := utils.CreateHMAC(fmt.Sprintf("%f:%d", newBalance, req.AccountID), []byte(s.secretKey))
-	_, err = tx.Exec(`UPDATE accounts SET balance = ?, balance_hash = ? WHERE id = ?`, newBalance, newBalanceHash, req.AccountID)
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to update account balance", Details: err.Error(), Err: err}
-	}
-	req.TransactionID = utils.GenerateTransactionID() // Генерация transactionID
+		// Update the account balance and hash.
+		account.Balance += req.Amount
+		account.BalanceHash = utils.CreateHMAC(fmt.Sprintf("%f:%d", account.Balance, req.AccountID), []byte(s.secretKey))
+		if err := tx.Save(&account).Error; err != nil {
+			return &AppError{Code: 500, Message: "Failed to update account balance", Details: err.Error(), Err: err}
+		}
 
-	// Insert the transaction record.
-	_, err = tx.Exec(`
-        INSERT INTO transactions (id, to_account_id, amount, type, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)`,
-		req.TransactionID, req.AccountID, req.Amount, "deposit", "completed", utils.GetCurrentTimestamp())
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to insert transaction record", Details: err.Error(), Err: err}
-	}
+		req.TransactionID = utils.GenerateTransactionID() // Генерация transactionID
 
-	if err := tx.Commit(); err != nil {
-		return &AppError{Code: 500, Message: "Failed to commit transaction", Details: err.Error(), Err: err}
-	}
-	return nil
+		// Insert the transaction record.
+		transaction := models.Transaction{
+			ID:          req.TransactionID,
+			ToAccountID: &req.AccountID,
+			Amount:      req.Amount,
+			Type:        "deposit",
+			Status:      "completed",
+			CreatedAt:   utils.GetCurrentTimestamp(),
+		}
+		if err := tx.Create(&transaction).Error; err != nil {
+			return &AppError{Code: 500, Message: "Failed to insert transaction record", Details: err.Error(), Err: err}
+		}
+
+		return nil
+	})
 }
 
 // ProcessWithdraw handles a withdrawal transaction.
@@ -103,60 +94,51 @@ func (s *transactionService) ProcessWithdraw(req *models.TransactionRequest, cla
 		return &AppError{Code: 400, Message: "Invalid withdrawal amount", Details: "Amount must be positive"}
 	}
 
-	tx, err := s.db.Begin()
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to start transaction", Details: err.Error(), Err: err}
-	}
-	defer tx.Rollback()
-
-	// Check if the account exists, belongs to the user, and has sufficient funds.
-	var (
-		existingBalance float64
-		balanceHash     string
-	)
-	err = tx.QueryRow(`SELECT balance, balance_hash FROM accounts WHERE id = ? AND user_id = ?`, req.AccountID, claims.UserID).Scan(&existingBalance, &balanceHash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return &AppError{Code: 404, Message: "Account not found or access denied", Details: fmt.Sprintf("account_id: %d, user_id: %d", req.AccountID, claims.UserID)}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var account models.Account
+		if err := tx.Where("id = ? AND user_id = ?", req.AccountID, claims.UserID).First(&account).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return &AppError{Code: 404, Message: "Account not found or access denied", Details: fmt.Sprintf("account_id: %d, user_id: %d", req.AccountID, claims.UserID)}
+			}
+			return &AppError{Code: 500, Message: "Failed to query account", Details: err.Error(), Err: err}
 		}
-		return &AppError{Code: 500, Message: "Failed to query account", Details: err.Error(), Err: err}
-	}
 
-	// Verify balance hash
-	expectedHash := utils.CreateHMAC(fmt.Sprintf("%f:%d", existingBalance, req.AccountID), []byte(s.secretKey))
-	if balanceHash != expectedHash {
-		return &AppError{Code: 500, Message: "Balance integrity check failed", Details: fmt.Sprintf("account_id: %d", req.AccountID)}
-	}
+		// Verify balance hash
+		expectedHash := utils.CreateHMAC(fmt.Sprintf("%f:%d", account.Balance, req.AccountID), []byte(s.secretKey))
+		if account.BalanceHash != expectedHash {
+			return &AppError{Code: 500, Message: "Balance integrity check failed", Details: fmt.Sprintf("account_id: %d", req.AccountID)}
+		}
 
-	if existingBalance < req.Amount {
-		return &AppError{Code: 400, Message: "Insufficient funds", Details: fmt.Sprintf("account_id: %d, balance: %f, requested: %f", req.AccountID, existingBalance, req.Amount)}
-	}
+		if account.Balance < req.Amount {
+			return &AppError{Code: 400, Message: "Insufficient funds", Details: fmt.Sprintf("account_id: %d, balance: %f, requested: %f", req.AccountID, account.Balance, req.Amount)}
+		}
 
-	// Update account balance and hash.
-	newBalance := existingBalance - req.Amount
-	newBalanceHash := utils.CreateHMAC(fmt.Sprintf("%f:%d", newBalance, req.AccountID), []byte(s.secretKey))
-	_, err = tx.Exec(`UPDATE accounts SET balance = ?, balance_hash = ? WHERE id = ? AND user_id = ?`, newBalance, newBalanceHash, req.AccountID, claims.UserID)
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to update account balance", Details: err.Error(), Err: err}
-	}
-	req.TransactionID = utils.GenerateTransactionID() // Генерация transactionID
+		// Update account balance and hash.
+		account.Balance -= req.Amount
+		account.BalanceHash = utils.CreateHMAC(fmt.Sprintf("%f:%d", account.Balance, req.AccountID), []byte(s.secretKey))
+		if err := tx.Save(&account).Error; err != nil {
+			return &AppError{Code: 500, Message: "Failed to update account balance", Details: err.Error(), Err: err}
+		}
 
-	// Insert transaction record.
-	_, err = tx.Exec(`
-        INSERT INTO transactions (id, from_account_id, amount, type, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)`,
-		req.TransactionID, req.AccountID, req.Amount, "withdraw", "completed", utils.GetCurrentTimestamp())
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to insert transaction record", Details: err.Error(), Err: err}
-	}
+		req.TransactionID = utils.GenerateTransactionID() // Генерация transactionID
 
-	if err := tx.Commit(); err != nil {
-		return &AppError{Code: 500, Message: "Failed to commit transaction", Details: err.Error(), Err: err}
-	}
-	return nil
+		// Insert transaction record.
+		transaction := models.Transaction{
+			ID:            req.TransactionID,
+			FromAccountID: &req.AccountID,
+			Amount:        req.Amount,
+			Type:          "withdraw",
+			Status:        "completed",
+			CreatedAt:     utils.GetCurrentTimestamp(),
+		}
+		if err := tx.Create(&transaction).Error; err != nil {
+			return &AppError{Code: 500, Message: "Failed to insert transaction record", Details: err.Error(), Err: err}
+		}
+
+		return nil
+	})
 }
 
-// ProcessTransfer handles a fund transfer between two accounts.
 // ProcessTransfer handles a fund transfer between two accounts.
 func (s *transactionService) ProcessTransfer(req *models.TransferRequest, claims *models.Claims) error {
 	if req.Amount <= 0 {
@@ -166,88 +148,69 @@ func (s *transactionService) ProcessTransfer(req *models.TransferRequest, claims
 		return &AppError{Code: 400, Message: "Invalid transfer", Details: "Source and destination accounts must be different"}
 	}
 
-	tx, err := s.db.Begin()
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to start transaction", Details: err.Error(), Err: err}
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var fromAccount, toAccount models.Account
+
+		// Check if the source account exists, belongs to the user, and has sufficient funds.
+		if err := tx.Where("id = ? AND user_id = ?", req.FromID, claims.UserID).First(&fromAccount).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return &AppError{Code: 404, Message: "Source account not found or access denied", Details: fmt.Sprintf("account_id: %d, user_id: %d", req.FromID, claims.UserID)}
+			}
+			return &AppError{Code: 500, Message: "Failed to query source account", Details: err.Error(), Err: err}
 		}
-	}()
 
-	// Check if the source account exists, belongs to the user, and has sufficient funds.
-	var (
-		fromBalance     float64
-		fromBalanceHash string
-	)
-	err = tx.QueryRow(`SELECT balance, balance_hash FROM accounts WHERE id = ? AND user_id = ?`, req.FromID, claims.UserID).Scan(&fromBalance, &fromBalanceHash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return &AppError{Code: 404, Message: "Source account not found or access denied", Details: fmt.Sprintf("account_id: %d, user_id: %d", req.FromID, claims.UserID)}
+		// Verify balance hash of the source account.
+		expectedFromHash := utils.CreateHMAC(fmt.Sprintf("%f:%d", fromAccount.Balance, req.FromID), []byte(s.secretKey))
+		if fromAccount.BalanceHash != expectedFromHash {
+			return &AppError{Code: 500, Message: "Source account balance integrity check failed", Details: fmt.Sprintf("account_id: %d", req.FromID)}
 		}
-		return &AppError{Code: 500, Message: "Failed to query source account", Details: err.Error(), Err: err}
-	}
 
-	// Verify balance hash of the source account.
-	expectedFromHash := utils.CreateHMAC(fmt.Sprintf("%f:%d", fromBalance, req.FromID), []byte(s.secretKey))
-	if fromBalanceHash != expectedFromHash {
-		return &AppError{Code: 500, Message: "Source account balance integrity check failed", Details: fmt.Sprintf("account_id: %d", req.FromID)}
-	}
-
-	if fromBalance < req.Amount {
-		return &AppError{Code: 400, Message: "Insufficient funds in source account", Details: fmt.Sprintf("account_id: %d, balance: %f, requested: %f", req.FromID, fromBalance, req.Amount)}
-	}
-
-	// Check if the destination account exists.
-	var (
-		toBalance     float64
-		toBalanceHash string
-	)
-
-	err = tx.QueryRow(`SELECT balance, balance_hash FROM accounts WHERE id = ?`, req.ToID).Scan(&toBalance, &toBalanceHash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return &AppError{Code: 404, Message: "Destination account not found", Details: fmt.Sprintf("account_id: %d", req.ToID)}
+		if fromAccount.Balance < req.Amount {
+			return &AppError{Code: 400, Message: "Insufficient funds in source account", Details: fmt.Sprintf("account_id: %d, balance: %f, requested: %f", req.FromID, fromAccount.Balance, req.Amount)}
 		}
-		return &AppError{Code: 500, Message: "Failed to query destination account", Details: err.Error(), Err: err}
-	}
 
-	// Verify balance hash of the destination account
-	expectedToHash := utils.CreateHMAC(fmt.Sprintf("%f:%d", toBalance, req.ToID), []byte(s.secretKey))
-	if toBalanceHash != expectedToHash {
-		return &AppError{Code: 500, Message: "Destination account balance integrity check failed", Details: fmt.Sprintf("account_id: %d", req.ToID)}
-	}
+		// Check if the destination account exists.
+		if err := tx.Where("id = ?", req.ToID).First(&toAccount).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return &AppError{Code: 404, Message: "Destination account not found", Details: fmt.Sprintf("account_id: %d", req.ToID)}
+			}
+			return &AppError{Code: 500, Message: "Failed to query destination account", Details: err.Error(), Err: err}
+		}
 
-	// Perform the transfer (update balances and hashes).
-	newFromBalance := fromBalance - req.Amount
-	newFromBalanceHash := utils.CreateHMAC(fmt.Sprintf("%f:%d", newFromBalance, req.FromID), []byte(s.secretKey))
-	_, err = tx.Exec(`UPDATE accounts SET balance = ?, balance_hash = ? WHERE id = ? AND user_id = ?`, newFromBalance, newFromBalanceHash, req.FromID, claims.UserID)
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to update source account balance", Details: err.Error(), Err: err}
-	}
+		// Verify balance hash of the destination account
+		expectedToHash := utils.CreateHMAC(fmt.Sprintf("%f:%d", toAccount.Balance, req.ToID), []byte(s.secretKey))
+		if toAccount.BalanceHash != expectedToHash {
+			return &AppError{Code: 500, Message: "Destination account balance integrity check failed", Details: fmt.Sprintf("account_id: %d", req.ToID)}
+		}
 
-	newToBalance := toBalance + req.Amount
-	newToBalanceHash := utils.CreateHMAC(fmt.Sprintf("%f:%d", newToBalance, req.ToID), []byte(s.secretKey))
-	_, err = tx.Exec(`UPDATE accounts SET balance = ?, balance_hash = ? WHERE id = ?`, newToBalance, newToBalanceHash, req.ToID)
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to update destination account balance", Details: err.Error(), Err: err}
-	}
+		// Perform the transfer (update balances and hashes).
+		fromAccount.Balance -= req.Amount
+		fromAccount.BalanceHash = utils.CreateHMAC(fmt.Sprintf("%f:%d", fromAccount.Balance, req.FromID), []byte(s.secretKey))
+		if err := tx.Save(&fromAccount).Error; err != nil {
+			return &AppError{Code: 500, Message: "Failed to update source account balance", Details: err.Error(), Err: err}
+		}
 
-	transactionID := utils.GenerateTransactionID()
-	// Кароче успешная транзакция.
-	_, err = tx.Exec(`
-        INSERT INTO transactions (id, from_account_id, to_account_id, amount, type, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		transactionID, req.FromID, req.ToID, req.Amount, "transfer", "completed", utils.GetCurrentTimestamp())
-	if err != nil {
-		return &AppError{Code: 500, Message: "Failed to insert transaction record", Details: err.Error(), Err: err}
-	}
+		toAccount.Balance += req.Amount
+		toAccount.BalanceHash = utils.CreateHMAC(fmt.Sprintf("%f:%d", toAccount.Balance, req.ToID), []byte(s.secretKey))
+		if err := tx.Save(&toAccount).Error; err != nil {
+			return &AppError{Code: 500, Message: "Failed to update destination account balance", Details: err.Error(), Err: err}
+		}
 
-	if err := tx.Commit(); err != nil {
-		return &AppError{Code: 500, Message: "Failed to commit transaction", Details: err.Error(), Err: err}
-	}
-	return nil
+		transactionID := utils.GenerateTransactionID()
+		// Кароче успешная транзакция.
+		transaction := models.Transaction{
+			ID:            transactionID,
+			FromAccountID: &req.FromID,
+			ToAccountID:   &req.ToID,
+			Amount:        req.Amount,
+			Type:          "transfer",
+			Status:        "completed",
+			CreatedAt:     utils.GetCurrentTimestamp(),
+		}
+		if err := tx.Create(&transaction).Error; err != nil {
+			return &AppError{Code: 500, Message: "Failed to insert transaction record", Details: err.Error(), Err: err}
+		}
+
+		return nil
+	})
 }
