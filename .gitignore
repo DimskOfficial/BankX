@@ -1,1 +1,43 @@
-bank.db
+# Environment variables
+.env
+
+# Logs
+logs/
+*.log
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Go modules
+vendor/
+go.sum
+
+# Go build artifacts
+*.a
+*.o
+*.cgo1.go
+*.cgo2.c
+*.test
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+.DS_Store
+Thumbs.db
