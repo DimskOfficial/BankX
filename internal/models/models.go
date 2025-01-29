@@ -7,7 +7,7 @@ import (
 
 // Структура Базы данных
 
-// здесь хранится пароль и имя
+// здесь хранится пароль и имя и ID
 type User struct {
 	ID        int    `json:"id"`
 	Username  string `json:"username"`
@@ -15,7 +15,7 @@ type User struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// При создании аккаунта получается это тут хранится баланс и id
+// При создании аккаунта получается это тут хранится баланс и ID
 type Account struct {
 	ID          int     `json:"id"`      // Это надо
 	UserID      int     `json:"user_id"` // и это тоже
