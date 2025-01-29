@@ -75,8 +75,8 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		return &AppError{Code: fiber.StatusBadRequest, Message: "Invalid request format", Details: err.Error(), Err: err}
 	}
 
+	// Регистрация пользователя
 	if err := h.authService.Register(req.Username, req.Password); err != nil {
-		// Check for specific errors like user already exists
 		var appErr *services.AppError
 		if errors.As(err, &appErr) {
 			return appErr
@@ -84,7 +84,16 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		return &AppError{Code: fiber.StatusInternalServerError, Message: "Registration failed", Details: err.Error(), Err: err}
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "Registration successful"})
+	// Генерация токена после успешной регистрации
+	token, err := h.authService.Login(req.Username, req.Password)
+	if err != nil {
+		return &AppError{Code: fiber.StatusInternalServerError, Message: "Token generation failed", Details: err.Error(), Err: err}
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"message": "Registration successful",
+		"token":   token,
+	})
 }
 
 // Обработчик авторизации
