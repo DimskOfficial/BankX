@@ -176,7 +176,7 @@ func (h *Handler) Transfer(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Transfer successful"})
 }
 
-// // Обработчик пополнения счета
+// Обработчик пополнения счета
 func (h *Handler) Deposit(c *fiber.Ctx) error {
 	claims, ok := c.Locals("user").(*models.Claims)
 	if !ok {
@@ -192,8 +192,8 @@ func (h *Handler) Deposit(c *fiber.Ctx) error {
 		return &AppError{Code: fiber.StatusBadRequest, Message: "Invalid request format", Details: err.Error(), Err: err}
 	}
 
-	req.AccountID = accountID // Что-бы было
-	if err := h.transactionService.ProcessDeposit(&req, claims, tld); err != nil {
+	req.AccountID = accountID // Устанавливаем AccountID
+	if err := h.transactionService.ProcessDeposit(&req, claims); err != nil {
 		var appErr *services.AppError
 		if errors.As(err, &appErr) {
 			return appErr
@@ -201,7 +201,7 @@ func (h *Handler) Deposit(c *fiber.Ctx) error {
 		return &AppError{Code: fiber.StatusBadRequest, Message: "Deposit failed", Details: err.Error(), Err: err}
 	}
 
-	return c.JSON(fiber.Map{"message": "Deposit successful", "transactionID": utils.GenerateTransactionID()}) // Ура все палучилось!
+	return c.JSON(fiber.Map{"message": "Deposit successful", "transactionID": utils.GenerateTransactionID()}) // Ура все получилось!
 }
 
 // Обработчик вывода средств со счеавта
