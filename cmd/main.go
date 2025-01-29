@@ -3,7 +3,6 @@ package main
 import (
 	"bank-api/internal/handlers"
 	"bank-api/internal/services"
-	"bank-api/pkg/database"
 	"log"
 	"os"
 
@@ -12,6 +11,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -19,15 +20,14 @@ func main() {
 		log.Println("Не найден .env файл, используем переменные окружения")
 	}
 
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "bank.db"
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("DATABASE_URL не установлен")
 	}
-	db, err := database.InitDB(dbPath)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("Ошибка инициализации БД: %v", err)
 	}
-	defer db.Close()
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
