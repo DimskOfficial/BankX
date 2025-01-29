@@ -4,7 +4,6 @@ package handlers
 import (
 	"bank-api/internal/models"
 	"bank-api/internal/services"
-	"bank-api/pkg/utils"
 	"errors"
 	"fmt"
 	"github.com/gofiber/fiber/v2"
