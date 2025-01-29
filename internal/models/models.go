@@ -17,10 +17,10 @@ type User struct {
 
 // При создании аккаунта получается это тут хранится баланс и ID
 type Account struct {
-	ID          int     `json:"id"`      // Это надо
-	UserID      int     `json:"user_id"` // и это тоже
+	ID          int     `json:"id"`
+	UserID      int     `json:"user_id"`
 	Balance     float64 `json:"balance"`
-	BalanceHash string  `json:"balance_hash"`
+	BalanceHash string  `json:"-"` // Исключено из JSON
 	CreatedAt   string  `json:"created_at"`
 }
 
